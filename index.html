@@ -87,6 +87,9 @@
             <button id="btnBack" data-i18n="backToConfig">Retour vers la configuration</button>
             <div class="item-entry" id="linkMovies">Films</div>
             <div class="item-entry" id="linkSeries">Séries</div>
+            <!-- Masqué tant qu'on ne sait pas si le serveur a de la TV en direct : révélé
+                 uniquement si /LiveTv/Channels annonce au moins une chaîne (voir loadChannelCount()). -->
+            <div class="item-entry hidden" id="linkLiveTv">TV en direct</div>
         </div>
         <div id="movies" class="hidden">
             <button id="btnBackCategoryMovies" data-i18n="backToLibraryChoice">Retour vers la bibliothèque</button>
@@ -102,11 +105,31 @@
             <span data-i18n="genreFilterLabel">Genre :</span> <select id="seriesGenreFilter"><option value="" data-i18n="allGenres">Tous les genres</option></select><br><br>
             <div id="seriesList" class="grid-container"></div>
         </div>
+        <!-- TV en direct : contrairement aux films/séries (chargés une fois puis filtrés côté
+             navigateur), la liste des chaînes est paginée ET recherchée côté serveur. Une grille
+             IPTV se compte souvent en milliers de chaînes (13840 sur le serveur de test, soit ~5 Mo
+             de JSON) : tout charger ferait exploser aussi bien l'analyse JSON que le nombre de
+             noeuds DOM sur les navigateurs visés par ce projet. -->
+        <div id="livetv" class="hidden">
+            <button id="btnBackCategoryLiveTv" data-i18n="backToLibraryChoice">Retour vers la bibliothèque</button>
+            <div class="category-title" id="liveTvTitle">TV en direct</div>
+            <p><i data-i18n="liveTvHint">La recherche et la navigation portent sur toutes les chaînes du serveur, page par page. Une recherche vide affiche la grille complète dans l'ordre alphabétique.</i></p>
+            <span data-i18n="search">Recherche :</span> <input type="text" id="channelSearch"><br><br>
+            <div id="channelList"></div>
+            <div id="channelPager">
+                <button id="btnChannelsPrev" data-i18n="previousPage">Page précédente</button>
+                <span id="channelsPageInfo"></span>
+                <button id="btnChannelsNext" data-i18n="nextPage">Page suivante</button>
+            </div>
+        </div>
     </div>
 
     <div id="detail" class="section hidden">
         <button id="btnBackLibrary" data-i18n="backToLibrary">Retour vers la bibliothèque</button>
         <h3 id="detailTitle" data-i18n="detailsDefaultTitle">Détails</h3>
+        <!-- Ligne d'état propre à la TV en direct : ouvrir une chaîne demande au serveur de contacter
+             le tuner (plusieurs secondes), et cet état conditionne la lecture (voir openLiveStream()). -->
+        <div id="liveStatus" class="hidden"></div>
         <div id="detailContent"></div>
         <div id="seriesOptions" class="hidden">
             <span data-i18n="seasonLabel">Saison :</span> <select id="seasonSelect"></select>
@@ -115,10 +138,16 @@
         <div id="playbackOptions">
             <div class="section">
                 <h4 data-i18n="contentAccessDirectPlayTitle">Accès au contenu (direct play)</h4>
-                <p><i data-i18n="directPlayDisclaimer">Le direct play envoie le fichier tel qu'il se trouve sur le serveur, sans aucune conversion. Le fichier vidéo peut être volumineux et son format peut ne pas être compatible avec la lecture dans le navigateur utilisé.</i></p>
+                <!-- Deux avertissements distincts (fichier / chaîne en direct) plutôt qu'un seul texte
+                     réécrit à la volée : data-i18n est appliqué en bloc par applyTranslations(), qui
+                     écraserait une substitution faite au moment de l'affichage. Même principe pour les
+                     autres libellés qui changent entre un média et une chaîne (titres de blocs ci-dessous). -->
+                <p id="directPlayDisclaimerFile"><i data-i18n="directPlayDisclaimer">Le direct play envoie le fichier tel qu'il se trouve sur le serveur, sans aucune conversion. Le fichier vidéo peut être volumineux et son format peut ne pas être compatible avec la lecture dans le navigateur utilisé.</i></p>
+                <p id="directPlayDisclaimerLive" class="hidden"><i data-i18n="directPlayDisclaimerLive">Le direct play envoie la chaîne telle qu'elle est diffusée, sans aucune conversion. C'est la seule façon de conserver toutes les pistes audio et sous-titres de la chaîne, mais le format est rarement lisible dans un navigateur : copiez plutôt le lien vers un lecteur externe (VLC/PowerVLC/MPlayer).</i></p>
 
                 <div class="section">
-                    <h5 data-i18n="fileInfoBlockTitle">Fichier</h5>
+                    <h5 id="fileInfoBlockTitleFile" data-i18n="fileInfoBlockTitle">Fichier</h5>
+                    <h5 id="fileInfoBlockTitleLive" class="hidden" data-i18n="sourceInfoBlockTitle">Source du flux</h5>
                     <div id="fileInfoContent"></div>
                 </div>
 
@@ -130,18 +159,21 @@
                 <a id="directPlayStreamLink" href="#" style="cursor:pointer" data-i18n="copyStreamLink">Copier lien stream</a>
                 &nbsp;|&nbsp;
                 <a id="directPlayPlayLink" href="#" style="cursor:pointer" data-i18n="streamButtonPlain">Lancer le stream</a>
-                &nbsp;|&nbsp;
-                <a id="directPlayDownloadLink" href="#" style="cursor:pointer" data-i18n="downloadButton">Télécharger</a>
+                <!-- Séparateur inclus dans le conteneur masquable : une chaîne en direct n'a pas de
+                     fichier à télécharger (flux sans fin), le lien ET son "|" disparaissent ensemble. -->
+                <span id="directPlayDownloadWrap">&nbsp;|&nbsp;
+                <a id="directPlayDownloadLink" href="#" style="cursor:pointer" data-i18n="downloadButton">Télécharger</a></span>
             </div>
 
             <div class="section">
                 <h4 data-i18n="transcodingSectionTitle">Transcodage</h4>
 
-                <div class="section">
+                <div class="section" id="trackConfigBlock">
                     <h5 data-i18n="trackConfigBlockTitle">Configuration des pistes</h5>
                     <span data-i18n="audioLabel">Audio :</span> <select id="audioSelect"></select>
                     <span data-i18n="subtitleLabel">Sous-titres :</span> <select id="subtitleSelect"></select>
                 </div>
+                <p id="liveTrackNote" class="hidden"><i data-i18n="liveTrackNote">Une chaîne en direct ne propose aucune piste numérotée (le serveur les annonce toutes à l'index -1) : le transcodage garde une seule piste audio, choisie par le serveur, et abandonne les sous-titres. Pour conserver toutes les pistes d'une chaîne, utilisez le direct play ci-dessus.</i></p>
 
                 <div class="section">
                     <h5 data-i18n="qualityBlockTitle">Qualité</h5>
@@ -214,14 +246,17 @@
                         <option value="60">60 fps</option>
                     </select>
                     <br><br>
-                    <p><b data-i18n="estimatedSizeLabel">Taille estimée du contenu complet :</b> <span id="estimatedSizeText">-</span></p>
-                    <p><i data-i18n="estimatedSizeHint">Cette estimation est basée sur le bitrate vidéo/audio choisi et la durée totale du contenu. La taille réelle peut légèrement varier.</i></p>
+                    <div id="estimatedSizeBlock">
+                        <p><b data-i18n="estimatedSizeLabel">Taille estimée du contenu complet :</b> <span id="estimatedSizeText">-</span></p>
+                        <p><i data-i18n="estimatedSizeHint">Cette estimation est basée sur le bitrate vidéo/audio choisi et la durée totale du contenu. La taille réelle peut légèrement varier.</i></p>
+                    </div>
                 </div>
 
                 <div class="section">
                     <h5 data-i18n="contentAccessTranscodedTitle">Accès au contenu (transcodé avec les paramètres choisis)</h5>
 
-                    <h6 data-i18n="hlsBlockTitle">m3u8 (permet l'avance rapide)</h6>
+                    <h6 id="hlsBlockTitleFile" data-i18n="hlsBlockTitle">m3u8 (permet l'avance rapide)</h6>
+                    <h6 id="hlsBlockTitleLive" class="hidden" data-i18n="hlsBlockTitleLive">m3u8 (playlist live)</h6>
                     <a id="streamLink" href="#" style="cursor:pointer" data-i18n="copyStreamLink">Copier lien stream</a>
                     &nbsp;|&nbsp;
                     <a id="playHlsLink" href="#" style="cursor:pointer" data-i18n="streamButton">Lancer le stream</a>
@@ -237,15 +272,18 @@
                          gère cette valeur de façon défensive (parseInt(...) || 0) quel que soit le rendu obtenu,
                          et onchange (ci-dessous, universellement supporté) prend le relais si oninput ne se
                          déclenche pas, voir getStartTimeTicks()/updateStartTimeDisplay() plus bas. -->
-                    <span class="v-mid" data-i18n="startTimeLabel">Démarrer à :</span>
-                    <input class="v-mid" type="range" id="startTimeSlider" min="0" max="0" step="1" value="0">
-                    <span class="v-mid" id="startTimeDisplay">0:00</span>
-                    <br>
+                    <!-- Enveloppé pour pouvoir disparaître en entier sur une chaîne en direct : un flux
+                         sans fin n'a pas de position de départ (startTimeTicks y est sans effet). -->
+                    <div id="startTimeRowMp4">
+                        <span class="v-mid" data-i18n="startTimeLabel">Démarrer à :</span>
+                        <input class="v-mid" type="range" id="startTimeSlider" min="0" max="0" step="1" value="0">
+                        <span class="v-mid" id="startTimeDisplay">0:00</span>
+                    </div>
                     <a id="progressiveStreamLink" href="#" style="cursor:pointer" data-i18n="copyStreamLink">Copier lien stream</a>
                     &nbsp;|&nbsp;
                     <a id="playLink" href="#" style="cursor:pointer" data-i18n="streamButtonLegacy">Lancer le stream (vieux navigateurs, sans avance rapide)</a>
-                    &nbsp;|&nbsp;
-                    <a id="downloadLink" href="#" style="cursor:pointer" data-i18n="downloadButton">Télécharger</a>
+                    <span id="downloadLinkWrap">&nbsp;|&nbsp;
+                    <a id="downloadLink" href="#" style="cursor:pointer" data-i18n="downloadButton">Télécharger</a></span>
 
                     <h6 data-i18n="flvBlockTitle">Conteneur flv (Flash Player)</h6>
                     <!-- Clone synchronisé du "Démarrer à" du bloc mp4 (voir le commentaire là-haut) :
@@ -254,10 +292,11 @@
                          fantôme, voir JellyDinosaurFlashPlayer.as), ce curseur est donc le SEUL
                          moyen de choisir la position en Flash ; changer de position = relancer la
                          lecture d'ici avec une nouvelle valeur. -->
-                    <span class="v-mid" data-i18n="startTimeLabel">Démarrer à :</span>
-                    <input class="v-mid" type="range" id="startTimeSliderFlash" min="0" max="0" step="1" value="0">
-                    <span class="v-mid" id="startTimeDisplayFlash">0:00</span>
-                    <br>
+                    <div id="startTimeRowFlash">
+                        <span class="v-mid" data-i18n="startTimeLabel">Démarrer à :</span>
+                        <input class="v-mid" type="range" id="startTimeSliderFlash" min="0" max="0" step="1" value="0">
+                        <span class="v-mid" id="startTimeDisplayFlash">0:00</span>
+                    </div>
                     <a id="flashProjectorLink" href="#" style="cursor:pointer" data-i18n="copyStreamLinkFlashProjector">Copier lien stream (Projecteur Flash Standalone)</a>
                     &nbsp;|&nbsp;
                     <a id="playFlashLink" href="#" style="cursor:pointer" data-i18n="streamButtonFlash">Lancer le stream (Flash Player, le plug-in doit être installé)</a>
@@ -398,9 +437,12 @@
         // supporté sur XMLHttpRequest qu'à partir d'IE10. XDomainRequest est l'objet dédié fourni par
         // Microsoft pour ces deux versions, mais avec de fortes limitations : GET/POST uniquement, aucun
         // en-tête personnalisé, et aucun code de statut HTTP exploitable (seuls onload/onerror/ontimeout
-        // existent). Utilisable donc uniquement pour de simples GET sans authentification par en-tête
-        // (ajax()/pingServer(), qui passent déjà la clé API en paramètre de requête) ; loginWithPassword()
-        // a besoin des en-têtes Authorization/Content-Type et ne peut pas s'appuyer dessus.
+        // existent). Utilisable donc uniquement pour des requêtes sans authentification par en-tête
+        // (ajax()/pingServer()/ajaxPost(), qui passent déjà la clé API en paramètre de requête) ;
+        // loginWithPassword() a besoin des en-têtes Authorization/Content-Type et ne peut pas s'appuyer
+        // dessus. Le nom parle de GET pour la raison historique que c'était alors le seul usage : la
+        // fabrique elle-même ne présume de rien, et ajaxPost() s'en sert aussi (XDomainRequest sait
+        // faire GET et POST, et rien d'autre).
         function createCrossDomainGetRequest(url) {
             if (typeof XDomainRequest !== "undefined" && isCrossOrigin(url)) {
                 return new XDomainRequest();
@@ -475,8 +517,25 @@
                 libraryTitle: "Bibliothèque",
                 movies: "Films",
                 series: "Séries",
+                liveTv: "TV en direct",
                 movieLabel: "Film",
                 seriesLabel: "Série",
+                channelLabel: "Chaîne TV",
+                liveTvHint: "La recherche et la navigation portent sur toutes les chaînes du serveur, page par page. Une recherche vide affiche la grille complète dans l'ordre alphabétique.",
+                previousPage: "Page précédente",
+                nextPage: "Page suivante",
+                channelsPageInfo: "Chaînes {from} à {to} sur {total}",
+                noChannelFound: "Aucune chaîne ne correspond à cette recherche.",
+                loadingChannels: "Chargement des chaînes...",
+                channelNumberLabel: "Numéro",
+                currentProgramLabel: "En ce moment",
+                openingChannel: "Ouverture de la chaîne sur le serveur...",
+                liveOpenFailed: "Le serveur n'a pas pu ouvrir cette chaîne : {error}. La lecture a peu de chances de fonctionner.",
+                liveNotReady: "La chaîne est encore en cours d'ouverture sur le serveur, patientez quelques secondes.",
+                directPlayDisclaimerLive: "Le direct play envoie la chaîne telle qu'elle est diffusée, sans aucune conversion. C'est la seule façon de conserver toutes les pistes audio et les sous-titres de la chaîne, mais le format est rarement lisible dans un navigateur : copiez plutôt le lien vers un lecteur externe (VLC/PowerVLC/MPlayer).",
+                sourceInfoBlockTitle: "Source du flux",
+                hlsBlockTitleLive: "m3u8 (playlist live)",
+                liveTrackNote: "Une chaîne en direct ne propose aucune piste numérotée (le serveur les annonce toutes à l'index -1) : le transcodage garde une seule piste audio, choisie par le serveur, et abandonne les sous-titres. Pour conserver toutes les pistes d'une chaîne, utilisez le direct play ci-dessus.",
                 search: "Recherche :",
                 genreFilterLabel: "Genre :",
                 allGenres: "Tous les genres",
@@ -555,6 +614,8 @@
                 flashMinVersionNote: "Nécessite Flash Player 9.0.115.0 ou supérieur (première version avec décodage H.264/AAC).",
                 hlsNotSupported: "Ce navigateur ne peut pas lire le flux directement. Utilisez le bouton \"Lancer le stream (vieux navigateurs, sans avance rapide)\".",
                 hlsJsLoadError: "Impossible de charger le lecteur HLS (fichier hls.min.js introuvable ou inaccessible sur le serveur). Utilisez le bouton \"Lancer le stream (vieux navigateurs, sans avance rapide)\" en attendant.",
+                hlsFatalError: "La lecture de ce flux a échoué. Essayez le bouton \"Lancer le stream (vieux navigateurs, sans avance rapide)\", ou copiez le lien du stream pour l'ouvrir dans un lecteur externe (VLC/PowerVLC/MPlayer).",
+                hlsFatalErrorLiveOrigin: "La lecture de ce flux a échoué. Cette chaîne est servie directement par une source tierce, qui n'autorise pas forcément la lecture depuis un navigateur. Utilisez plutôt le stream transcodé (bloc \"Transcodage\" ci-dessous), ou copiez ce lien pour l'ouvrir dans un lecteur externe (VLC/PowerVLC/MPlayer), qui n'a pas cette restriction.",
                 popupBlocked: "Le navigateur a bloqué l'ouverture du nouvel onglet. Autorisez les popups pour ce site et réessayez.",
                 downloadButton: "Télécharger",
                 downloading: "Téléchargement...",
@@ -613,8 +674,25 @@
                 libraryTitle: "Library",
                 movies: "Movies",
                 series: "Series",
+                liveTv: "Live TV",
                 movieLabel: "Movie",
                 seriesLabel: "Series",
+                channelLabel: "TV channel",
+                liveTvHint: "Search and browsing cover every channel on the server, one page at a time. An empty search shows the whole line-up in alphabetical order.",
+                previousPage: "Previous page",
+                nextPage: "Next page",
+                channelsPageInfo: "Channels {from} to {to} of {total}",
+                noChannelFound: "No channel matches this search.",
+                loadingChannels: "Loading channels...",
+                channelNumberLabel: "Number",
+                currentProgramLabel: "On now",
+                openingChannel: "Opening the channel on the server...",
+                liveOpenFailed: "The server could not open this channel: {error}. Playback is unlikely to work.",
+                liveNotReady: "The channel is still being opened on the server, please wait a few seconds.",
+                directPlayDisclaimerLive: "Direct play sends the channel exactly as it is broadcast, with no conversion. It is the only way to keep every audio track and subtitle the channel carries, but the format is rarely playable in a browser: copy the link into an external player instead (VLC/PowerVLC/MPlayer).",
+                sourceInfoBlockTitle: "Stream source",
+                hlsBlockTitleLive: "m3u8 (live playlist)",
+                liveTrackNote: "A live channel exposes no numbered tracks (the server reports them all at index -1): transcoding keeps a single audio track, picked by the server, and drops the subtitles. To keep every track a channel carries, use direct play above.",
                 search: "Search:",
                 genreFilterLabel: "Genre:",
                 allGenres: "All genres",
@@ -693,6 +771,8 @@
                 flashMinVersionNote: "Requires Flash Player 9.0.115.0 or later (first version with H.264/AAC decoding).",
                 hlsNotSupported: "This browser cannot play the stream directly. Use the \"Start streaming (legacy browsers, no seeking)\" button instead.",
                 hlsJsLoadError: "Could not load the HLS player (hls.min.js file missing or unreachable on the server). Use the \"Start streaming (legacy browsers, no seeking)\" button in the meantime.",
+                hlsFatalError: "This stream could not be played. Try the \"Start streaming (legacy browsers, no seeking)\" button, or copy the stream link and open it in an external player (VLC/PowerVLC/MPlayer).",
+                hlsFatalErrorLiveOrigin: "This stream could not be played. This channel is served straight from a third-party source, which does not necessarily allow playback from a browser. Use the transcoded stream instead (the \"Transcoding\" block below), or copy this link and open it in an external player (VLC/PowerVLC/MPlayer), which has no such restriction.",
                 popupBlocked: "The browser blocked the new tab. Allow popups for this site and try again.",
                 downloadButton: "Download",
                 downloading: "Downloading...",
@@ -790,8 +870,36 @@
         var currentPlayableRunTimeTicks = null;
         // Item "parent" affiché dans la vue détail (Film ou Série)
         var currentItem = null;
-        // Sous-vue affichée dans la bibliothèque : "categoryChoice", "movies" ou "series"
+        // Sous-vue affichée dans la bibliothèque : "categoryChoice", "movies", "series" ou "livetv"
         var currentLibraryView = "categoryChoice";
+
+        // --- TV en direct ---------------------------------------------------------------------
+        // Vrai quand la vue détail affiche une chaîne (Type "TvChannel") et non un film/épisode :
+        // tout ce qui doit distinguer les deux interroge cet indicateur plutôt que de recevoir un
+        // paramètre supplémentaire de bout en bout.
+        var currentIsLive = false;
+        // Une chaîne n'est pas un fichier : le tuner doit être "ouvert" avant que le serveur ne
+        // serve quoi que ce soit (PlaybackInfo donne un OpenToken, /LiveStreams/Open le transforme
+        // en flux vivant). Ces trois valeurs ne sont connues qu'après cette ouverture, et toutes les
+        // URLs de lecture d'une chaîne doivent les porter.
+        var liveMediaSourceId = null;   // Id de la MediaSource ouverte (≠ Id de la chaîne)
+        var liveStreamId = null;        // identifiant du flux vivant qui maintient le tuner ouvert
+        var liveContainer = null;       // conteneur réellement servi par le tuner ("hls", "ts"...)
+        // Adresse d'origine du tuner quand elle est joignable depuis ce navigateur (playlist HLS
+        // distante) : la lire directement donne toutes les qualités et toutes les pistes annoncées
+        // par la chaîne, là où le serveur n'en relaierait qu'une seule (voir buildDirectPlayUrl()).
+        var liveOriginUrl = null;
+
+        // Pagination de la grille de chaînes (voir le commentaire du bloc #livetv) : une page à la
+        // fois, jamais toute la grille. 100 lignes restent confortables même sur un navigateur de
+        // 2005, tout en limitant le nombre d'allers-retours pour parcourir une grille moyenne.
+        var CHANNELS_PAGE_SIZE = 100;
+        var channelsStartIndex = 0;
+        var channelsTotalCount = 0;
+        var channelsQuery = "";
+        // Nombre total de chaînes annoncé par le serveur au chargement de la bibliothèque : sert
+        // uniquement à savoir s'il faut proposer l'entrée "TV en direct" (0 = pas de tuner).
+        var liveTvChannelCount = 0;
 
         // Mémorisation de la navigation dans localStorage, pour survivre à un rafraîchissement de page
         var NAV_STATE_KEY = "jellyDinosaurNavState";
@@ -1090,7 +1198,16 @@
         }
 
         function saveLibraryState() {
-            saveState({ serverUrl: serverUrl, apiKey: apiKey, view: "library", libraryView: currentLibraryView });
+            saveState({
+                serverUrl: serverUrl,
+                apiKey: apiKey,
+                view: "library",
+                libraryView: currentLibraryView,
+                // La grille de chaînes n'étant pas gardée en mémoire (une page à la fois, voir
+                // loadChannels()), sa page et sa recherche font partie de l'état à restaurer.
+                channelsQuery: channelsQuery,
+                channelsStartIndex: channelsStartIndex
+            });
         }
 
         function saveDetailState(itemId, seasonId, episodeId) {
@@ -1102,6 +1219,22 @@
                 itemId: itemId,
                 seasonId: seasonId || null,
                 episodeId: episodeId || null
+            });
+        }
+
+        // Une chaîne ne se recharge pas comme un film (elle n'est pas dans /Items sans son type) :
+        // l'état retient qu'il s'agit d'un direct pour que la restauration reparte de
+        // /LiveTv/Channels/{id} et de la vue adaptée.
+        function saveLiveDetailState(channelId) {
+            saveState({
+                serverUrl: serverUrl,
+                apiKey: apiKey,
+                view: "detail",
+                isLive: true,
+                libraryView: "livetv",
+                itemId: channelId,
+                channelsQuery: channelsQuery,
+                channelsStartIndex: channelsStartIndex
             });
         }
 
@@ -1153,7 +1286,11 @@
 
         // onError (optionnel) est appelé sur tout échec définitif (timeout ou erreur serveur), avant
         // l'affichage du bandeau d'erreur : utile pour réinitialiser un indicateur "Connexion en cours...".
-        function ajax(url, params, callback, onError) {
+        // silentOnError (optionnel) : n'affiche pas le bandeau d'erreur rouge en cas d'échec. Réservé
+        // aux requêtes purement facultatives, dont l'échec ne doit pas polluer l'écran (la TV en
+        // direct, absente ou refusée sur certains serveurs, n'a pas à se signaler par une erreur au
+        // chargement de la bibliothèque). onError est appelé normalement dans tous les cas.
+        function ajax(url, params, callback, onError, silentOnError) {
             var query = "";
             if (!params) {
                 params = {};
@@ -1169,7 +1306,13 @@
             var settled = false;
 
             function retry() {
-                ajax(url, params, callback, onError);
+                ajax(url, params, callback, onError, silentOnError);
+            }
+
+            function fail(message) {
+                if (!silentOnError) {
+                    showError(message, retry);
+                }
             }
 
             // Repli IE8/9 (voir createCrossDomainGetRequest) : pas de code de statut disponible sur
@@ -1186,7 +1329,7 @@
                     if (onError) {
                         onError();
                     }
-                    showError(t("timeoutError", { seconds: AJAX_TIMEOUT_MS / 1000 }), retry);
+                    fail(t("timeoutError", { seconds: AJAX_TIMEOUT_MS / 1000 }));
                 }, AJAX_TIMEOUT_MS);
                 xdr.onload = function() {
                     if (settled) {
@@ -1206,7 +1349,7 @@
                     if (onError) {
                         onError();
                     }
-                    showError(t("serverError", { code: "?" }), retry);
+                    fail(t("serverError", { code: "?" }));
                 };
                 xdr.open("GET", fullUrl);
                 setTimeout(function() {
@@ -1230,7 +1373,7 @@
                 if (onError) {
                     onError();
                 }
-                showError(t("timeoutError", { seconds: AJAX_TIMEOUT_MS / 1000 }), retry);
+                fail(t("timeoutError", { seconds: AJAX_TIMEOUT_MS / 1000 }));
             }, AJAX_TIMEOUT_MS);
 
             xhr.open("GET", fullUrl, true);
@@ -1249,16 +1392,126 @@
                         if (onError) {
                             onError();
                         }
-                        handleUnauthorized();
+                        // Une requête facultative (silentOnError) ne déconnecte jamais : un 401 y
+                        // signifie que CE contenu est refusé au compte utilisé, pas que la clé est
+                        // invalide -- les requêtes obligatoires, elles, sont déjà passées avant.
+                        if (!silentOnError) {
+                            handleUnauthorized();
+                        }
                     } else if (xhr.status !== 0) {
                         if (onError) {
                             onError();
                         }
-                        showError(t("serverError", { code: xhr.status }), retry);
+                        fail(t("serverError", { code: xhr.status }));
                     }
                 }
             };
             xhr.send(null);
+        }
+
+        // Ouvrir un flux de TV en direct demande au serveur de contacter le tuner et de sonder le
+        // flux : c'est bien plus long qu'un appel d'API classique (plusieurs secondes sur une chaîne
+        // "froide"), d'où un délai d'attente dédié, très au-dessus des 10 s des autres requêtes.
+        var LIVE_OPEN_TIMEOUT_MS = 45000;
+
+        // Même chose qu'ajax(), mais en POST. Tous les paramètres passent par la query string et le
+        // corps reste vide : les endpoints utilisés ici (/LiveStreams/Open) acceptent leurs arguments
+        // des deux façons, et cela évite d'encoder un document JSON pour dire un seul mot.
+        // Le Content-Type est volontairement "text/plain" et non "application/json" :
+        // - un Content-Type absent fait répondre 400 au serveur (vérifié), il en faut donc un ;
+        // - "text/plain" fait partie des types "simples" du CORS : la requête part directement, sans
+        //   requête de contrôle OPTIONS préalable (qu'un vieux navigateur ne sait pas émettre) ;
+        // - c'est aussi le seul type que XDomainRequest (IE8/9) sait envoyer, ce qui permet de garder
+        //   le même repli cross-domain que pour les GET.
+        function ajaxPost(url, params, timeoutMs, callback, onError) {
+            var query = "";
+            if (!params) {
+                params = {};
+            }
+            params.ApiKey = apiKey;
+            for (var key in params) {
+                if (params.hasOwnProperty(key)) {
+                    query += (query === ""? "?" : "&") + encodeURIComponent(key) + "=" + encodeURIComponent(params[key]);
+                }
+            }
+
+            var fullUrl = serverUrl + url + query;
+            var settled = false;
+
+            var xdr = createCrossDomainGetRequest(fullUrl);
+            if (xdr) {
+                var xdrTimeoutTimer = setTimeout(function() {
+                    if (settled) {
+                        return;
+                    }
+                    settled = true;
+                    xdr.abort();
+                    if (onError) {
+                        onError(t("timeoutError", { seconds: timeoutMs / 1000 }));
+                    }
+                }, timeoutMs);
+                xdr.onload = function() {
+                    if (settled) {
+                        return;
+                    }
+                    settled = true;
+                    clearTimeout(xdrTimeoutTimer);
+                    callback(JSON.parse(xdr.responseText));
+                };
+                xdr.onerror = function() {
+                    if (settled) {
+                        return;
+                    }
+                    settled = true;
+                    clearTimeout(xdrTimeoutTimer);
+                    if (onError) {
+                        onError("?");
+                    }
+                };
+                xdr.open("POST", fullUrl);
+                setTimeout(function() {
+                    if (!settled) {
+                        xdr.send("");
+                    }
+                }, 0);
+                return;
+            }
+
+            tryEnableCrossDomainPrivilege();
+
+            var xhr = createXHR();
+
+            var timeoutTimer = setTimeout(function() {
+                if (settled) {
+                    return;
+                }
+                settled = true;
+                xhr.abort();
+                if (onError) {
+                    onError(t("timeoutError", { seconds: timeoutMs / 1000 }));
+                }
+            }, timeoutMs);
+
+            xhr.open("POST", fullUrl, true);
+            xhr.setRequestHeader("Content-Type", "text/plain");
+            xhr.onreadystatechange = function() {
+                if (xhr.readyState === 4) {
+                    if (settled) {
+                        return;
+                    }
+                    settled = true;
+                    clearTimeout(timeoutTimer);
+
+                    if (xhr.status === 200) {
+                        callback(JSON.parse(xhr.responseText));
+                    } else if (xhr.status === 401) {
+                        handleUnauthorized();
+                    } else if (onError) {
+                        onError("HTTP " + xhr.status);
+                    }
+                }
+            };
+            xhr.send("");
         }
 
         // Vérifie qu'un serveur Jellyfin répond bien à l'adresse indiquée, sans authentification
@@ -1462,6 +1715,7 @@
                 populateGenreFilter("movieGenreFilter", movieItems);
                 populateGenreFilter("seriesGenreFilter", seriesItems);
                 setCategoryLabels(movieCount, seriesCount);
+                loadChannelCount();
 
                 document.getElementById("config").className = "section hidden";
                 document.getElementById("library").className = "section";
@@ -1736,21 +1990,17 @@
         };
 
         function showCategoryChoice() {
-            document.getElementById("categoryChoice").className = "";
-            document.getElementById("movies").className = "hidden";
-            document.getElementById("series").className = "hidden";
+            applyLibraryView("categoryChoice");
         }
 
         document.getElementById("linkMovies").onclick = function() {
-            document.getElementById("categoryChoice").className = "hidden";
-            document.getElementById("movies").className = "";
+            applyLibraryView("movies");
             currentLibraryView = "movies";
             saveLibraryState();
         };
 
         document.getElementById("linkSeries").onclick = function() {
-            document.getElementById("categoryChoice").className = "hidden";
-            document.getElementById("series").className = "";
+            applyLibraryView("series");
             currentLibraryView = "series";
             saveLibraryState();
         };
@@ -1766,6 +2016,426 @@
             currentLibraryView = "categoryChoice";
             saveLibraryState();
         };
+
+        // ================================ TV en direct ==========================================
+
+        // String.prototype.trim() est ES5 (absent d'IE8 et des Gecko d'avant Firefox 3.5).
+        function trimText(value) {
+            return String(value).replace(/^\s+|\s+$/g, "");
+        }
+
+        // Une seule requête, la moins chère possible (limit=0 ne renvoie aucun item, seulement le
+        // total) : elle sert uniquement à savoir s'il faut proposer l'entrée "TV en direct". Un
+        // serveur sans tuner répond 200 avec un total à 0, l'entrée reste alors masquée.
+        // En échec, silence complet (silentOnError) : la TV en direct est facultative, et un serveur
+        // qui ne répond pas sur cet endpoint ne doit pas accueillir l'utilisateur par une erreur
+        // rouge -- ni le déconnecter -- alors que sa bibliothèque vient de se charger correctement.
+        function loadChannelCount() {
+            ajax("/LiveTv/Channels", { "limit": "0" }, function(data) {
+                liveTvChannelCount = data.TotalRecordCount || 0;
+                var link = document.getElementById("linkLiveTv");
+                if (liveTvChannelCount > 0) {
+                    setText(link, t("liveTv") + " (" + liveTvChannelCount + ")");
+                    setText(document.getElementById("liveTvTitle"), t("liveTv") + " (" + liveTvChannelCount + ")");
+                    link.className = "item-entry";
+                } else {
+                    link.className = "item-entry hidden";
+                }
+            }, null, true);
+        }
+
+        // "2026-08-14T16:15:00.0000000Z" -> "18:15" dans le fuseau horaire de la machine.
+        // Le texte n'est pas donné à new Date(texte) : l'analyse d'une date ISO 8601 n'est garantie
+        // qu'à partir d'ES5 (IE8 et les vieux Gecko renvoient NaN, d'autant plus avec les 7 décimales
+        // de seconde que Jellyfin écrit). Les champs sont donc extraits à la main puis assemblés par
+        // Date.UTC() (présent depuis les toutes premières versions de JavaScript) ; Jellyfin date
+        // toujours le guide en UTC, la conversion vers l'heure locale est ensuite faite par getHours().
+        function formatProgramTime(isoDate) {
+            var parts = /^(\d\d\d\d)-(\d\d)-(\d\d)T(\d\d):(\d\d)/.exec(String(isoDate || ""));
+            if (!parts) {
+                return "";
+            }
+            var date = new Date(Date.UTC(parseInt(parts[1], 10), parseInt(parts[2], 10) - 1, parseInt(parts[3], 10),
+                                         parseInt(parts[4], 10), parseInt(parts[5], 10)));
+            if (isNaN(date.getTime())) {
+                return "";
+            }
+            var hours = date.getHours();
+            var minutes = date.getMinutes();
+            return (hours < 10 ? "0" : "") + hours + ":" + (minutes < 10 ? "0" : "") + minutes;
+        }
+
+        // Ce qui passe en ce moment sur la chaîne, quand le serveur a un guide des programmes.
+        // Beaucoup de grilles (playlists m3u sans EPG) n'en ont aucun : on renvoie alors une chaîne
+        // vide, et l'affichage se réduit au nom de la chaîne plutôt que d'aligner des blancs.
+        function currentProgramText(channel) {
+            var program = channel.CurrentProgram;
+            if (!program) {
+                return "";
+            }
+            var text = program.Name || "";
+            if (program.EpisodeTitle) {
+                text += " - " + program.EpisodeTitle;
+            }
+            var from = formatProgramTime(program.StartDate);
+            var to = formatProgramTime(program.EndDate);
+            if (from && to) {
+                text += " (" + from + "-" + to + ")";
+            }
+            return text;
+        }
+
+        // Le numéro de chaîne, quand il existe, se lit devant le nom comme sur une télécommande.
+        function channelDisplayName(channel) {
+            var number = channel.Number || channel.ChannelNumber || "";
+            return (number ? number + " - " : "") + (channel.Name || "");
+        }
+
+        function renderChannelList(items) {
+            var list = document.getElementById("channelList");
+            list.innerHTML = "";
+
+            if (items.length === 0) {
+                var empty = document.createElement("div");
+                setText(empty, t("noChannelFound"));
+                list.appendChild(empty);
+                return;
+            }
+
+            for (var i = 0; i < items.length; i++) {
+                (function(channel) {
+                    var entry = document.createElement("div");
+                    entry.className = "item-entry";
+                    var label = channelDisplayName(channel);
+                    var program = currentProgramText(channel);
+                    setText(entry, program ? label + " - " + program : label);
+                    entry.onclick = function() {
+                        showLiveDetail(channel);
+                    };
+                    list.appendChild(entry);
+                })(items[i]);
+            }
+        }
+
+        function updateChannelPager(shownCount) {
+            var info = document.getElementById("channelsPageInfo");
+            if (channelsTotalCount === 0) {
+                setText(info, "");
+            } else {
+                setText(info, " " + t("channelsPageInfo", {
+                    from: channelsStartIndex + 1,
+                    to: channelsStartIndex + shownCount,
+                    total: channelsTotalCount
+                }) + " ");
+            }
+            document.getElementById("btnChannelsPrev").disabled = channelsStartIndex <= 0;
+            document.getElementById("btnChannelsNext").disabled = (channelsStartIndex + shownCount) >= channelsTotalCount;
+        }
+
+        // Charge UNE page de la grille. Deux endpoints selon le cas, chacun en une seule requête :
+        // - navigation : /LiveTv/Channels, l'endpoint dédié, qui ne connaît en revanche aucun
+        //   paramètre de recherche (il n'en existe aucun dans sa signature) ;
+        // - recherche : /Items sur le type TvChannel, qui accepte searchTerm.
+        // Les deux renvoient le programme en cours (à la demande via addCurrentProgram pour le
+        // premier, d'office pour le second), donc l'affichage est le même dans les deux cas.
+        function loadChannels(startIndex, afterLoad) {
+            channelsStartIndex = startIndex > 0 ? startIndex : 0;
+            setText(document.getElementById("channelsPageInfo"), " " + t("loadingChannels") + " ");
+
+            function onLoaded(data) {
+                var items = data.Items || [];
+                channelsTotalCount = typeof data.TotalRecordCount === "number" ? data.TotalRecordCount : items.length;
+                renderChannelList(items);
+                updateChannelPager(items.length);
+                saveLibraryState();
+                scrollTo(0, 0);
+                // Appelé après l'enregistrement de l'état : la restauration d'une chaîne affichée
+                // enchaîne ici, pour que l'état "détail" soit écrit après l'état "bibliothèque" et
+                // ne soit pas écrasé par lui.
+                if (afterLoad) {
+                    afterLoad();
+                }
+            }
+
+            if (channelsQuery !== "") {
+                ajax("/Items", {
+                    "IncludeItemTypes": "TvChannel",
+                    "Recursive": "true",
+                    "searchTerm": channelsQuery,
+                    "SortBy": "SortName",
+                    "SortOrder": "Ascending",
+                    "StartIndex": String(channelsStartIndex),
+                    "Limit": String(CHANNELS_PAGE_SIZE),
+                    "EnableUserData": "false",
+                    "EnableImageTypes": "Primary",
+                    "ImageTypeLimit": "1"
+                }, onLoaded);
+            } else {
+                ajax("/LiveTv/Channels", {
+                    "startIndex": String(channelsStartIndex),
+                    "limit": String(CHANNELS_PAGE_SIZE),
+                    "sortBy": "SortName",
+                    "sortOrder": "Ascending",
+                    "addCurrentProgram": "true",
+                    "enableUserData": "false",
+                    "enableImageTypes": "Primary",
+                    "imageTypeLimit": "1"
+                }, onLoaded);
+            }
+        }
+
+        var channelSearchTimer = null;
+
+        document.getElementById("channelSearch").onkeyup = function() {
+            var value = this.value;
+            if (channelSearchTimer) {
+                clearTimeout(channelSearchTimer);
+            }
+            // Même temporisation que les autres champs de recherche, mais ici elle évite surtout une
+            // requête serveur par caractère tapé (la recherche de chaînes n'est pas locale).
+            channelSearchTimer = setTimeout(function() {
+                var query = trimText(value);
+                if (query === channelsQuery) {
+                    return;
+                }
+                channelsQuery = query;
+                loadChannels(0);
+            }, 500);
+        };
+
+        document.getElementById("btnChannelsPrev").onclick = function() {
+            if (channelsStartIndex > 0) {
+                loadChannels(channelsStartIndex - CHANNELS_PAGE_SIZE);
+            }
+        };
+
+        document.getElementById("btnChannelsNext").onclick = function() {
+            if (channelsStartIndex + CHANNELS_PAGE_SIZE < channelsTotalCount) {
+                loadChannels(channelsStartIndex + CHANNELS_PAGE_SIZE);
+            }
+        };
+
+        document.getElementById("linkLiveTv").onclick = function() {
+            currentLibraryView = "livetv";
+            applyLibraryView("livetv");
+            loadChannels(0);
+        };
+
+        document.getElementById("btnBackCategoryLiveTv").onclick = function() {
+            currentLibraryView = "categoryChoice";
+            applyLibraryView("categoryChoice");
+            saveLibraryState();
+        };
+
+        // Ligne d'état de la vue détail d'une chaîne (ouverture en cours, ou échec d'ouverture).
+        function setLiveStatus(message) {
+            var el = document.getElementById("liveStatus");
+            setText(el, message || "");
+            el.className = message ? "" : "hidden";
+        }
+
+        // Bascule l'ensemble de la vue détail entre un média de la bibliothèque et une chaîne en
+        // direct : un flux sans fin n'a ni durée (donc ni taille estimée, ni position de départ, ni
+        // téléchargement), ni pistes numérotées à choisir.
+        function applyLiveModeUi(isLive) {
+            function toggle(id, visible, baseClass) {
+                var el = document.getElementById(id);
+                if (!el) {
+                    return;
+                }
+                var base = baseClass || "";
+                el.className = visible ? base : (base ? base + " hidden" : "hidden");
+            }
+
+            toggle("directPlayDisclaimerFile", !isLive);
+            toggle("directPlayDisclaimerLive", isLive);
+            toggle("fileInfoBlockTitleFile", !isLive);
+            toggle("fileInfoBlockTitleLive", isLive);
+            toggle("directPlayDownloadWrap", !isLive);
+            toggle("trackConfigBlock", !isLive, "section");
+            toggle("liveTrackNote", isLive);
+            toggle("estimatedSizeBlock", !isLive);
+            toggle("startTimeRowMp4", !isLive);
+            toggle("startTimeRowFlash", !isLive);
+            toggle("downloadLinkWrap", !isLive);
+            toggle("hlsBlockTitleFile", !isLive);
+            toggle("hlsBlockTitleLive", isLive);
+
+            if (!isLive) {
+                setLiveStatus("");
+            }
+        }
+
+        function buildChannelDetailContent(channel) {
+            var container = document.createElement("div");
+
+            var imageUrl = buildPrimaryImageUrl(channel);
+            if (imageUrl) {
+                var img = document.createElement("img");
+                img.src = imageUrl;
+                img.alt = channel.Name;
+                container.appendChild(img);
+                container.appendChild(document.createElement("br"));
+            }
+
+            function addLine(label, value) {
+                if (!value) {
+                    return;
+                }
+                var line = document.createElement("div");
+                setText(line, label + " : " + value);
+                container.appendChild(line);
+            }
+
+            addLine(t("detailType"), t("channelLabel"));
+            addLine(t("channelNumberLabel"), channel.Number || channel.ChannelNumber);
+            addLine(t("currentProgramLabel"), currentProgramText(channel));
+
+            if (channel.CurrentProgram && channel.CurrentProgram.Overview) {
+                var overview = document.createElement("div");
+                setText(overview, channel.CurrentProgram.Overview);
+                container.appendChild(overview);
+            }
+
+            return container;
+        }
+
+        // Là où le tuner puise réellement, quand c'est un endroit que CE navigateur peut atteindre.
+        // Un tuner alimenté par une playlist distante (le montage classique des grilles IPTV) donne
+        // une URL http(s) absolue que le serveur déclare distante ; tout le reste (multicast relayé
+        // sur le réseau du serveur, fichier local) nomme quelque chose d'inatteignable d'ici et
+        // repasse donc par le serveur.
+        function liveOriginFrom(mediaSource) {
+            var path = mediaSource.Path;
+            if (typeof path !== "string" || !/^https?:\/\//.test(path)) {
+                return null;
+            }
+            if (mediaSource.Protocol !== "Http" || mediaSource.IsRemote !== true) {
+                return null;
+            }
+            return path;
+        }
+
+        // Le conteneur n'est pas toujours renseigné : quand le sondage de la chaîne n'aboutit pas,
+        // le serveur renvoie une source ouverte SANS conteneur (constaté sur des chaînes alimentées
+        // par un CDN distant, injoignable depuis ici). On ne devine pas dans ce cas -- ni l'adresse
+        // d'origine (que la page vient justement de montrer inatteignable), ni Static=true (qui a
+        // besoin de savoir ce qui traverse) : c'est le remux TS par le serveur qui est demandé,
+        // parce que le serveur est le seul élément dont la joignabilité est acquise.
+        function liveSourceIsPlaylist() {
+            return liveContainer === "hls";
+        }
+
+        // Un tuner doit être branché avant qu'on puisse lui demander quoi que ce soit : PlaybackInfo
+        // délivre un OpenToken, /LiveStreams/Open le transforme en flux vivant, et toutes les URLs de
+        // lecture doivent ensuite porter la MediaSource ouverte et cet identifiant de flux -- pas
+        // ceux de la chaîne.
+        //
+        // Ce n'est pas une formalité : sur un tuner qui tire du réseau local du serveur, celui-ci ne
+        // renvoie RIEN sans cette ouverture (mesuré dans le plug-in PowerVLC : flux direct vide et
+        // playlist coupée par le proxy inverse). Ce qui a pu faire croire l'inverse, c'est qu'un tuner
+        // alimenté par une playlist HLS distante, lui, sert ses URLs sans aucune ouverture préalable.
+        //
+        // Le flux n'est jamais refermé : la page n'est pas prévenue de l'arrêt de la lecture (le lien
+        // peut même avoir été copié vers un lecteur externe), et fermer un flux encore lu le tuerait.
+        // Le serveur recycle de lui-même un flux vivant resté inactif.
+        function openLiveStream(channelId) {
+            setLiveStatus(t("openingChannel"));
+
+            ajax("/Items/" + channelId + "/PlaybackInfo", {}, function(data) {
+                // L'utilisateur a pu repartir vers une autre chaîne (ou vers la bibliothèque)
+                // pendant l'attente : la réponse ne concerne alors plus ce qui est affiché.
+                if (!currentIsLive || currentPlayableId !== channelId) {
+                    return;
+                }
+
+                var sources = data.MediaSources || [];
+                var source = sources.length > 0 ? sources[0] : null;
+                if (!source) {
+                    setLiveStatus(t("liveOpenFailed", { error: "?" }));
+                    return;
+                }
+
+                // Une source qui ne délivre aucun jeton s'utilise telle quelle.
+                if (!source.OpenToken) {
+                    liveMediaSourceId = source.Id || channelId;
+                    liveContainer = source.Container ? String(source.Container).toLowerCase() : null;
+                    liveOriginUrl = liveOriginFrom(source);
+                    renderMediaTechnicalInfo(source);
+                    setLiveStatus("");
+                    return;
+                }
+
+                ajaxPost("/LiveStreams/Open", { "openToken": source.OpenToken }, LIVE_OPEN_TIMEOUT_MS, function(opened) {
+                    if (!currentIsLive || currentPlayableId !== channelId) {
+                        return;
+                    }
+                    var mediaSource = opened.MediaSource;
+                    if (!mediaSource) {
+                        setLiveStatus(t("liveOpenFailed", { error: "?" }));
+                        return;
+                    }
+                    liveMediaSourceId = mediaSource.Id || channelId;
+                    liveStreamId = mediaSource.LiveStreamId || null;
+                    liveContainer = mediaSource.Container ? String(mediaSource.Container).toLowerCase() : null;
+                    liveOriginUrl = liveOriginFrom(mediaSource);
+                    // L'ouverture sonde la source : c'est le seul moment où le serveur décrit
+                    // vraiment la chaîne (codec, résolution, débit), que l'item ne portait pas.
+                    renderMediaTechnicalInfo(mediaSource);
+                    setLiveStatus("");
+                }, function(error) {
+                    if (!currentIsLive || currentPlayableId !== channelId) {
+                        return;
+                    }
+                    // On garde quand même la source non ouverte comme repli : c'est exactement ce
+                    // dont se contentent les tuners de type playlist distante. L'échec est dit à
+                    // l'écran, car ailleurs la lecture ne démarrera tout simplement jamais.
+                    liveMediaSourceId = source.Id || channelId;
+                    liveContainer = source.Container ? String(source.Container).toLowerCase() : null;
+                    liveOriginUrl = liveOriginFrom(source);
+                    renderMediaTechnicalInfo(source);
+                    setLiveStatus(t("liveOpenFailed", { error: error }));
+                });
+            });
+        }
+
+        function showLiveDetail(channel) {
+            scrollTo(0, 0);
+            resetDownloadUI();
+
+            currentItem = channel;
+            currentIsLive = true;
+            currentPlayableId = channel.Id;
+            // Un direct n'a pas de durée : ni taille estimée, ni curseur de position.
+            currentPlayableRunTimeTicks = null;
+            liveMediaSourceId = null;
+            liveStreamId = null;
+            liveContainer = null;
+            liveOriginUrl = null;
+            updateEstimatedSize();
+            updateStartTimeSliderRange();
+
+            document.getElementById("library").className = "section hidden";
+            document.getElementById("detail").className = "section";
+            setText(document.getElementById("detailTitle"), channelDisplayName(channel));
+
+            var detailContent = document.getElementById("detailContent");
+            detailContent.innerHTML = "";
+            detailContent.appendChild(buildChannelDetailContent(channel));
+
+            document.getElementById("seriesOptions").className = "hidden";
+            applyLiveModeUi(true);
+
+            // Les pistes d'une chaîne sont toutes annoncées à l'index -1, qui n'est pas un numéro
+            // qu'on puisse demander : les listes restent vides et le transcodage s'en remet au serveur.
+            fillSelect("audioSelect", []);
+            fillSelect("subtitleSelect", []);
+            renderMediaTechnicalInfo(null);
+
+            bindPlaybackLinks();
+            openLiveStream(channel.Id);
+            saveLiveDetailState(channel.Id);
+        }
 
         // Formate une date ISO renvoyée par l'API en date lisible
         function formatDate(isoDate) {
@@ -2024,10 +2694,12 @@
             resetDownloadUI();
 
             currentItem = item;
+            currentIsLive = false;
             currentPlayableId = null;
             currentPlayableRunTimeTicks = null;
             updateEstimatedSize();
             updateStartTimeSliderRange();
+            applyLiveModeUi(false);
 
             document.getElementById("library").className = "section hidden";
             document.getElementById("detail").className = "section";
@@ -2065,100 +2737,101 @@
                 saveDetailState(item.Id, null, item.Id);
             }
 
-            var directPlayStreamLink = document.getElementById("directPlayStreamLink");
-            directPlayStreamLink.onclick = function() {
-                if (!currentPlayableId) {
-                    alert(t("noMediaSelected"));
+            bindPlaybackLinks();
+        }
+
+        // Vrai quand il y a réellement quelque chose à lire. Pour une chaîne, cela veut aussi dire
+        // que le tuner a fini d'être ouvert : avant, les URLs construites ne porteraient ni la bonne
+        // MediaSource ni l'identifiant du flux vivant, et le serveur ne renverrait rien.
+        function playbackTargetReady() {
+            if (!currentPlayableId) {
+                alert(t("noMediaSelected"));
+                return false;
+            }
+            if (currentIsLive && !liveMediaSourceId) {
+                alert(t("liveNotReady"));
+                return false;
+            }
+            return true;
+        }
+
+        // Les liens de lecture sont les mêmes pour un média de la bibliothèque et pour une chaîne :
+        // ce sont les constructeurs d'URL qui savent lequel des deux est affiché (currentIsLive).
+        function bindPlaybackLinks() {
+            document.getElementById("directPlayStreamLink").onclick = function() {
+                if (!playbackTargetReady()) {
                     return false;
                 }
                 copyToClipboard(buildDirectPlayUrl());
                 return false;
             };
 
-            var directPlayPlayLink = document.getElementById("directPlayPlayLink");
-            directPlayPlayLink.onclick = function() {
-                if (!currentPlayableId) {
-                    alert(t("noMediaSelected"));
+            document.getElementById("directPlayPlayLink").onclick = function() {
+                if (!playbackTargetReady()) {
                     return false;
                 }
-                playInBrowser(buildDirectPlayUrl());
+                playDirectInBrowser(buildDirectPlayUrl());
                 return false;
             };
 
-            var directPlayDownloadLink = document.getElementById("directPlayDownloadLink");
-            directPlayDownloadLink.onclick = function() {
-                if (!currentPlayableId) {
-                    alert(t("noMediaSelected"));
+            document.getElementById("directPlayDownloadLink").onclick = function() {
+                if (!playbackTargetReady()) {
                     return false;
                 }
                 directPlayDownload();
                 return false;
             };
 
-            var streamLink = document.getElementById("streamLink");
-            streamLink.onclick = function() {
-                if (!currentPlayableId) {
-                    alert(t("noMediaSelected"));
+            document.getElementById("streamLink").onclick = function() {
+                if (!playbackTargetReady()) {
                     return false;
                 }
                 copyToClipboard(buildHlsUrl());
                 return false;
             };
 
-            var progressiveStreamLink = document.getElementById("progressiveStreamLink");
-            progressiveStreamLink.onclick = function() {
-                if (!currentPlayableId) {
-                    alert(t("noMediaSelected"));
+            document.getElementById("progressiveStreamLink").onclick = function() {
+                if (!playbackTargetReady()) {
                     return false;
                 }
                 copyToClipboard(buildProgressiveUrl());
                 return false;
             };
 
-            var playLink = document.getElementById("playLink");
-            playLink.onclick = function() {
-                if (!currentPlayableId) {
-                    alert(t("noMediaSelected"));
+            document.getElementById("playLink").onclick = function() {
+                if (!playbackTargetReady()) {
                     return false;
                 }
                 playInBrowser(buildProgressiveUrl());
                 return false;
             };
 
-            var playFlashLink = document.getElementById("playFlashLink");
-            playFlashLink.onclick = function() {
-                if (!currentPlayableId) {
-                    alert(t("noMediaSelected"));
+            document.getElementById("playFlashLink").onclick = function() {
+                if (!playbackTargetReady()) {
                     return false;
                 }
                 playFlashInBrowser(buildFlashUrl());
                 return false;
             };
 
-            var flashProjectorLink = document.getElementById("flashProjectorLink");
-            flashProjectorLink.onclick = function() {
-                if (!currentPlayableId) {
-                    alert(t("noMediaSelected"));
+            document.getElementById("flashProjectorLink").onclick = function() {
+                if (!playbackTargetReady()) {
                     return false;
                 }
                 copyToClipboard(buildFlashProjectorUrl(buildFlashUrl()));
                 return false;
             };
 
-            var playHlsLink = document.getElementById("playHlsLink");
-            playHlsLink.onclick = function() {
-                if (!currentPlayableId) {
-                    alert(t("noMediaSelected"));
+            document.getElementById("playHlsLink").onclick = function() {
+                if (!playbackTargetReady()) {
                     return false;
                 }
                 playHlsInBrowser(buildHlsUrl());
                 return false;
             };
 
-            var downloadLink = document.getElementById("downloadLink");
-            downloadLink.onclick = function() {
-                if (!currentPlayableId) {
-                    alert(t("noMediaSelected"));
+            document.getElementById("downloadLink").onclick = function() {
+                if (!playbackTargetReady()) {
                     return false;
                 }
                 downloadStream();
@@ -2185,8 +2858,23 @@
                 maxFramerate: document.getElementById("maxFramerateSelect").value,
                 audioIdx: audioSelect.options.length > 0 ? audioSelect.value : "0",
                 subIdx: subtitleSelect.options.length > 0 ? subtitleSelect.value : "-1",
-                playSessionId: "jellydinosaur" + (new Date()).getTime() + Math.floor(Math.random() * 1000000)
+                playSessionId: newPlaySessionId()
             };
+        }
+
+        // Identifie la session de lecture côté serveur (visible dans le tableau de bord Jellyfin,
+        // et ce qui lui permet d'arrêter le transcodage qui lui appartient).
+        function newPlaySessionId() {
+            return "jellydinosaur" + (new Date()).getTime() + Math.floor(Math.random() * 1000000);
+        }
+
+        // Ce que toute URL de lecture d'une chaîne doit porter : la MediaSource sur laquelle le tuner
+        // a été ouvert, et le flux vivant qui le maintient ouvert -- pas l'Id de la chaîne. Une
+        // chaîne qui n'a rien eu à ouvrir retombe sur son propre Id, ce à quoi répondent les tuners
+        // alimentés par une playlist m3u.
+        function liveSourceParams() {
+            return "&mediaSourceId=" + encodeURIComponent(liveMediaSourceId || currentPlayableId) +
+                   (liveStreamId ? "&liveStreamId=" + encodeURIComponent(liveStreamId) : "");
         }
 
         // Estime la taille totale du contenu transcodé (bitrate vidéo + audio choisis, multiplié par la
@@ -2231,10 +2919,22 @@
         // un videoBitRate plus élevé n'a alors aucun effet, le transcodeur le ramène à la limite du niveau.
         // C'est pourquoi level/profile sont maintenant configurables (voir #levelSelect/#profileSelect) :
         // passer en profil "high" et/ou un niveau supérieur (4.1+) est nécessaire pour dépasser ce plafond.
+        //
+        // Une chaîne en direct passe par live.m3u8 et non main.m3u8 : main.m3u8 est la playlist d'un
+        // fichier, et demandée sur une chaîne le serveur répond 500 (vérifié). Aucune ouverture de
+        // flux n'est nécessaire pour CETTE requête -- le serveur branche le tuner à la volée -- mais
+        // l'ouverture faite à l'affichage de la chaîne reste nécessaire pour désigner la bonne
+        // MediaSource (voir liveSourceParams()).
         function buildHlsUrl() {
             var sel = getPlaybackSelection();
+            // Les pistes ne portent un numéro que sur un fichier ; sur une chaîne il n'y a rien à
+            // numéroter, et un index que le serveur ne sait pas retrouver est pire que pas d'index.
+            var trackParams = currentIsLive ? "" :
+                   ("&subtitleMethod=Encode" +
+                    "&audioStreamIndex=" + sel.audioIdx +
+                    "&subtitleStreamIndex=" + sel.subIdx);
 
-            return serverUrl + "/Videos/" + currentPlayableId + "/main.m3u8?" +
+            return serverUrl + "/Videos/" + currentPlayableId + (currentIsLive ? "/live.m3u8?" : "/main.m3u8?") +
                    "ApiKey=" + apiKey +
                    "&VideoCodec=h264" +
                    "&AudioCodec=aac" +
@@ -2243,7 +2943,6 @@
                    "&profile=" + sel.profile +
                    "&level=" + sel.level +
                    "&videoBitRate=" + sel.bitrate +
-                   "&subtitleMethod=Encode" +
                    "&maxAudioChannels=2" +
                    "&AudioSampleRate=44100" +
                    "&audioBitRate=" + sel.audioBitrate +
@@ -2251,18 +2950,25 @@
                    "&maxVideoBitDepth=" + sel.maxVideoBitDepth +
                    "&maxRefFrames=" + sel.maxRefFrames +
                    "&maxFramerate=" + sel.maxFramerate +
-                   "&audioStreamIndex=" + sel.audioIdx +
-                   "&subtitleStreamIndex=" + sel.subIdx +
+                   trackParams +
                    "&deviceId=" + AUTH_DEVICE_ID +
                    "&playSessionId=" + sel.playSessionId +
-                   "&mediaSourceId=" + currentPlayableId +
+                   (currentIsLive ? liveSourceParams() : "&mediaSourceId=" + currentPlayableId) +
                    "&transcodeReasons=" + encodeURIComponent(TRANSCODE_REASON);
         }
 
-        // Lien progressif (mp4) : lu directement par une balise <video> native, sans dépendre du support HLS du navigateur
-        function buildProgressiveUrl() {
+        // Corps commun aux deux liens progressifs ci-dessous : seul le conteneur (mp4 ou flv) les
+        // distingue, tout le reste (réglages de qualité, pistes, position de départ, désignation de
+        // la source en direct) est rigoureusement identique.
+        function buildProgressiveUrlForContainer(container) {
             var sel = getPlaybackSelection();
-            var startTimeTicks = getStartTimeTicks();
+            // Sur une chaîne : aucune piste à numéroter (toutes annoncées à l'index -1), et aucune
+            // position de départ possible dans un flux sans fin.
+            var trackParams = currentIsLive ? "" :
+                   ("&subtitleMethod=Encode" +
+                    "&audioStreamIndex=" + sel.audioIdx +
+                    "&subtitleStreamIndex=" + sel.subIdx);
+            var startTimeTicks = currentIsLive ? 0 : getStartTimeTicks();
 
             return serverUrl + "/Videos/" + currentPlayableId + "/Stream?" +
                    "ApiKey=" + apiKey +
@@ -2270,11 +2976,10 @@
                    "&AudioCodec=aac" +
                    "&maxHeight=" + sel.res +
                    "&maxWidth=" + sel.maxWidth +
-                   "&container=mp4" +
+                   "&container=" + container +
                    "&profile=" + sel.profile +
                    "&level=" + sel.level +
                    "&videoBitRate=" + sel.bitrate +
-                   "&subtitleMethod=Encode" +
                    "&maxAudioChannels=2" +
                    "&AudioSampleRate=44100" +
                    "&audioBitRate=" + sel.audioBitrate +
@@ -2282,12 +2987,17 @@
                    "&maxVideoBitDepth=" + sel.maxVideoBitDepth +
                    "&maxRefFrames=" + sel.maxRefFrames +
                    "&maxFramerate=" + sel.maxFramerate +
-                   "&audioStreamIndex=" + sel.audioIdx +
-                   "&subtitleStreamIndex=" + sel.subIdx +
+                   trackParams +
                    "&deviceId=" + AUTH_DEVICE_ID +
                    "&playSessionId=" + sel.playSessionId +
+                   (currentIsLive ? liveSourceParams() : "") +
                    "&transcodeReasons=" + encodeURIComponent(TRANSCODE_REASON) +
                    (startTimeTicks > 0 ? "&startTimeTicks=" + startTimeTicks : "");
+        }
+
+        // Lien progressif (mp4) : lu directement par une balise <video> native, sans dépendre du support HLS du navigateur
+        function buildProgressiveUrl() {
+            return buildProgressiveUrlForContainer("mp4");
         }
 
         // Lien progressif dédié à Flash Player (conteneur FLV, pas MP4) : le flux /Stream en MP4 est
@@ -2300,42 +3010,45 @@
         // (ffprobe + inspection des tags FLV) : H.264 Baseline + AAC, tags bien interleaved, lisible en
         // flux. Flash Player ne supporte que H.264 (et les anciens codecs Sorenson Spark/VP6) : VP9 n'a
         // jamais été implémenté dans Flash Player, quel que soit le conteneur.
+        // Le "Démarrer à" des liens mp4 s'applique aussi ici (le lecteur Flash n'a aucun seek
+        // intégré, voir JellyDinosaurFlashPlayer.as, le positionnement passe entièrement par ce
+        // paramètre) -- sauf sur une chaîne en direct, où il n'y a pas de position à choisir.
         function buildFlashUrl() {
-            var sel = getPlaybackSelection();
-            // Même "Démarrer à" que les liens mp4 : le lecteur Flash n'a aucun seek intégré (voir
-            // JellyDinosaurFlashPlayer.as), le positionnement passe entièrement par ce paramètre.
-            var startTimeTicks = getStartTimeTicks();
-
-            return serverUrl + "/Videos/" + currentPlayableId + "/Stream?" +
-                   "ApiKey=" + apiKey +
-                   "&VideoCodec=h264" +
-                   "&AudioCodec=aac" +
-                   "&maxHeight=" + sel.res +
-                   "&maxWidth=" + sel.maxWidth +
-                   "&container=flv" +
-                   "&profile=" + sel.profile +
-                   "&level=" + sel.level +
-                   "&videoBitRate=" + sel.bitrate +
-                   "&subtitleMethod=Encode" +
-                   "&maxAudioChannels=2" +
-                   "&AudioSampleRate=44100" +
-                   "&audioBitRate=" + sel.audioBitrate +
-                   "&enableAudioVbrEncoding=false" +
-                   "&maxVideoBitDepth=" + sel.maxVideoBitDepth +
-                   "&maxRefFrames=" + sel.maxRefFrames +
-                   "&maxFramerate=" + sel.maxFramerate +
-                   "&audioStreamIndex=" + sel.audioIdx +
-                   "&subtitleStreamIndex=" + sel.subIdx +
-                   "&deviceId=" + AUTH_DEVICE_ID +
-                   "&playSessionId=" + sel.playSessionId +
-                   "&transcodeReasons=" + encodeURIComponent(TRANSCODE_REASON) +
-                   (startTimeTicks > 0 ? "&startTimeTicks=" + startTimeTicks : "");
+            return buildProgressiveUrlForContainer("flv");
         }
 
         // Lien "direct play" : sert le fichier original tel quel (Static=true), sans transcodage.
         // La lecture ne fonctionnera que si le navigateur sait nativement décoder le conteneur/les
         // codecs source (ce n'est pas garanti, contrairement aux flux transcodés ci-dessus).
+        //
+        // Une chaîne en direct se sert de la même façon dès que le tuner délivre un flux de
+        // transport : Static=true le fait traverser tel quel, donc TOUT arrive -- les quatre pistes
+        // audio d'Arte (français, allemand, VO, audiodescription) et ses sous-titres télétexte, là
+        // où le transcodage n'en garderait qu'une seule et abandonnerait les sous-titres.
+        //
+        // Deux exceptions, quand le tuner est lui-même alimenté par une playlist (voir
+        // liveSourceIsPlaylist()) :
+        // - le serveur ne peut pas la faire traverser (Static=true relaie alors le m3u8 du tuner,
+        //   dont les noms de segments sont relatifs au tuner et répondent 404 sous l'adresse du
+        //   serveur) : il faut lui demander un remux TS avec les deux codecs copiés ;
+        // - et si le serveur nous a dit d'où il tire (playlist distante joignable d'ici), autant
+        //   suivre la même playlist que lui : elle livre la playlist maîtresse complète -- toutes les
+        //   qualités, toutes les pistes audio et sous-titres annoncées -- alors que le remux du
+        //   serveur n'en fait passer qu'une seule.
         function buildDirectPlayUrl() {
+            if (currentIsLive) {
+                var isPlaylist = liveSourceIsPlaylist();
+                if (liveOriginUrl && isPlaylist) {
+                    return liveOriginUrl;
+                }
+                var passthrough = !isPlaylist && !!liveContainer;
+                return serverUrl + "/Videos/" + currentPlayableId + "/stream.ts?" +
+                       "ApiKey=" + apiKey +
+                       (passthrough ? "&Static=true" : "&Container=ts&VideoCodec=copy&AudioCodec=copy") +
+                       liveSourceParams() +
+                       "&deviceId=" + AUTH_DEVICE_ID +
+                       "&playSessionId=" + newPlaySessionId();
+            }
             return serverUrl + "/Videos/" + currentPlayableId + "/stream?" +
                    "Static=true" +
                    "&mediaSourceId=" + currentPlayableId +
@@ -2357,6 +3070,33 @@
             window.open(url, "_blank");
         }
 
+        // Vrai si l'URL désigne une playlist HLS. Le test porte sur l'extension et s'arrête à la
+        // query string / l'ancre, une playlist étant très souvent servie avec des paramètres
+        // (jetons, identifiants de session) collés derrière le ".m3u8".
+        function isHlsPlaylistUrl(url) {
+            return /\.m3u8($|[?#])/.test(String(url));
+        }
+
+        // Le direct play d'une chaîne en direct n'est pas toujours un flux : quand le tuner tire
+        // d'une playlist distante, c'est CETTE playlist qui est servie (voir buildDirectPlayUrl()).
+        // Ouverte telle quelle dans un onglet, aucun navigateur hors Safari ne sait quoi en faire --
+        // Firefox la télécharge comme un fichier texte -- alors que hls.js la lit très bien. On
+        // aiguille donc sur le lecteur HLS dès que l'URL est une playlist, et sur l'ouverture directe
+        // sinon (un fichier de la bibliothèque, ou un flux de transport que rien ne lira nativement
+        // dans un navigateur de toute façon).
+        // Cette playlist appartient au tuner, pas au serveur Jellyfin : le CDN qui la sert n'autorise
+        // pas forcément la lecture depuis une autre origine (constaté), et hls.js abandonne alors
+        // sur une erreur réseau. Le repli à conseiller ici est donc le stream transcodé (servi par
+        // Jellyfin, sans cette restriction), ou un lecteur externe -- pas le mp4 progressif, qui
+        // butera sur exactement le même mur.
+        function playDirectInBrowser(url) {
+            if (isHlsPlaylistUrl(url)) {
+                playHlsInBrowser(url, "hlsFatalErrorLiveOrigin");
+                return;
+            }
+            playInBrowser(url);
+        }
+
         // URL de hls.js : servie localement (fichier hls.min.js du projet, plus aucun CDN externe pour
         // des raisons de sécurité), chargée uniquement à la demande, à l'intérieur du nouvel onglet
         // ouvert par playHlsInBrowser() : les navigateurs récents comme Firefox ou Chrome ne savent pas
@@ -2375,7 +3115,10 @@
         // Lance la lecture d'une balise <video>, en avalant une éventuelle erreur "autoplay bloqué"
         // (politique du navigateur) : les contrôles restent visibles, l'utilisateur peut alors lancer
         // la lecture manuellement.
-        function playHlsInBrowser(url) {
+        // fatalMessageKey (optionnel) : quoi dire si la lecture échoue définitivement. Le conseil
+        // utile n'est pas le même selon l'origine du flux (voir playDirectInBrowser()), d'où ce
+        // paramètre plutôt qu'un message unique qui serait à côté de la plaque dans un cas sur deux.
+        function playHlsInBrowser(url, fatalMessageKey) {
             var newWindow = window.open("", "_blank");
             if (!newWindow) {
                 alert(t("popupBlocked"));
@@ -2408,6 +3151,17 @@
                         return;
                     }
                     var hls = new HlsCtor();
+                    // Sans ceci, un échec définitif laisse un onglet noir et muet. Le cas est réel
+                    // sur le direct play d'une chaîne : l'URL lue est alors la playlist du tuner,
+                    // servie par un CDN tiers qui n'autorise pas forcément la lecture depuis une
+                    // autre origine (CORS) -- hls.js abandonne alors sans rien afficher. On le dit,
+                    // et on renvoie vers le lien à copier dans un lecteur externe, qui lui n'a
+                    // aucune de ces restrictions.
+                    hls.on(HlsCtor.Events.ERROR, function(event, data) {
+                        if (data && data.fatal) {
+                            newWindow.alert(t(fatalMessageKey || "hlsFatalError"));
+                        }
+                    });
                     hls.loadSource(url);
                     hls.attachMedia(video);
                 };
@@ -2915,7 +3669,10 @@
 
             appendInfoLine(fileContainer, t("fileInfoContainer"), mediaSource.Container);
             appendInfoLine(fileContainer, t("fileInfoPath"), mediaSource.Path);
-            appendInfoLine(fileContainer, t("fileInfoSize"), mediaSource.Size ? formatBytes(mediaSource.Size) : null);
+            // Une chaîne en direct n'a pas de taille : quand le tuner est alimenté par une playlist,
+            // le serveur remplit quand même ce champ avec la taille du fichier m3u8 (quelques Ko),
+            // ce qui ne veut rien dire pour un flux sans fin.
+            appendInfoLine(fileContainer, t("fileInfoSize"), (!currentIsLive && mediaSource.Size) ? formatBytes(mediaSource.Size) : null);
 
             var streams = mediaSource.MediaStreams || [];
             var videoStream = null;
@@ -3010,17 +3767,12 @@
         // Affiche la bonne sous-vue de la bibliothèque (choix de catégorie, films ou séries),
         // indépendamment de la vue "detail" éventuellement affichée par-dessus.
         function applyLibraryView(view) {
-            if (view === "movies") {
-                document.getElementById("categoryChoice").className = "hidden";
-                document.getElementById("movies").className = "";
-                document.getElementById("series").className = "hidden";
-            } else if (view === "series") {
-                document.getElementById("categoryChoice").className = "hidden";
-                document.getElementById("movies").className = "hidden";
-                document.getElementById("series").className = "";
-            } else {
-                showCategoryChoice();
-            }
+            var known = { categoryChoice: true, movies: true, series: true, livetv: true };
+            var shown = known.hasOwnProperty(view) ? view : "categoryChoice";
+            document.getElementById("categoryChoice").className = shown === "categoryChoice" ? "" : "hidden";
+            document.getElementById("movies").className = shown === "movies" ? "" : "hidden";
+            document.getElementById("series").className = shown === "series" ? "" : "hidden";
+            document.getElementById("livetv").className = shown === "livetv" ? "" : "hidden";
         }
 
         function restoreNavigation() {
@@ -3037,12 +3789,31 @@
             // ApiKey est géré uniquement par restoreSavedCredentials(), à partir de SAVED_API_KEY_KEY,
             // qui n'est renseigné que par une connexion réussie via le formulaire "Clé API".
             currentLibraryView = state.libraryView || "categoryChoice";
+            channelsQuery = state.channelsQuery || "";
+            channelsStartIndex = state.channelsStartIndex || 0;
 
             loadLibrary(function() {
                 // On restaure d'abord la sous-vue de la bibliothèque (elle reste "en dessous"
                 // même si on affiche ensuite la vue détail par-dessus), pour que le bouton
                 // "Retour" ramène bien sur la bonne liste (Films/Séries) après un rafraîchissement.
                 applyLibraryView(currentLibraryView);
+
+                if (currentLibraryView === "livetv") {
+                    document.getElementById("channelSearch").value = channelsQuery;
+                    // La grille n'est pas gardée en mémoire : la page où on se trouvait est
+                    // redemandée au serveur, puis la chaîne affichée par-dessus s'il y en avait une.
+                    loadChannels(channelsStartIndex, function() {
+                        if (state.view !== "detail" || !state.isLive || !state.itemId) {
+                            return;
+                        }
+                        ajax("/LiveTv/Channels/" + state.itemId, {}, function(channel) {
+                            if (channel && channel.Id) {
+                                showLiveDetail(channel);
+                            }
+                        });
+                    });
+                    return;
+                }
 
                 if (state.view === "detail" && state.itemId) {
                     ajax("/Items", { "Ids": state.itemId, "Fields": "Overview,Genres,Tags,Studios" }, function(data) {

@@ -10,6 +10,7 @@ You may want to setup this app with an integrated reverse proxy on your LAN whic
 ## Features
 - Internationalization (french & english)
 - Can login on JellyFin through an API key or a login + password
+- Live TV: browse and search the whole channel line-up (paginated server-side, so a 14000-channel IPTV grid stays usable), see what is on right now when the server has a guide, then watch a channel through the same playback options as any other content (direct play, m3u8, mp4, Flash). Direct play sends the channel exactly as broadcast, keeping every audio track and subtitle it carries
 - Modern browsers are not excluded and should be happy to use this front-end too with slightly more features but the main aspect you may want it is for performance & its minimalistic approach. Here you won't load megabytes of stuff and executing plenty of javascript for fancy animations and UI stuff & dev frameworks.
 
 ## What is the minimal configuration
