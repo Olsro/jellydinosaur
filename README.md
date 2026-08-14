@@ -2,7 +2,9 @@
 A no bullshit, super fast, and JavaScript ES3 compliant Jellyfin client (front-end).
 
 It is a static webpage, which can be uploaded to any HTTP web server.
+
 To host one locally and quick, use: python3 -m http.server 20005
+
 You may want to setup this app with an integrated reverse proxy on your LAN which you can do with: node serve-with-proxy.js
 
 ## Features
@@ -13,7 +15,7 @@ You may want to setup this app with an integrated reverse proxy on your LAN whic
 ## What is the minimal configuration
 Your browser need to support LocalStorage and ES3 JavaScript. Expect early-2000 browsers to work from the Windows XP/PowerPC Macs era. Though also expect a sub-optimal experience on them and don't expect most of them will be good enough to properly handle the video streams sent from Jellyfin.
 
-Don't expect to get a good experience with streaming even by lowering quality, there's high chances streaming will not work if your browser is too old even if you choose to use the mp4 container. Here, JellyDinosaur expect you to download the file or "Copy the stream link" to an adequate application (XBMC/KODI/VLC/mPlayer) that will do the playback with the best possible performance & reliably.
+Don't expect to get a good experience with streaming even by lowering quality, there's high chances streaming will not work if your browser is too old even if you choose to use the mp4 container. Here, JellyDinosaur expect you to download the file or "Copy the stream link" to an adequate application (PowerVLC/XBMC/KODI/VLC/mPlayer) that will do the playback with the best possible performance & reliably.
 
 About quality, the default quality on transcoding that will be selected is 480p with the "High quality" preset I provide. I believe most legacy early Intel machines will be happy to decode this. Confirmed smooth on my 2007 GMA950 MacBook Core 2 Duo and looking decently good.
 
@@ -47,4 +49,4 @@ Outside of the code, everything is human efforts, including but not limited to:
 - Writing social media posts and answering to comments from the community
 
 ## Supporting your work
-If you wanna help me to cover the costs of this dev (time spent + AI tool) and if this app is useful to you, a tip will be greatly apprecied thank you very much: 
+If you wanna help me to cover the costs of this dev (time spent + AI tool) and if this app is useful to you, a tip will be greatly apprecied thank you very much: https://www.patreon.com/c/Olsro
