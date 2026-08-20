@@ -12,6 +12,14 @@ You may want to setup this app with an integrated reverse proxy on your LAN whic
 ![Alt text](screenshots/library.png?raw=true "Library Page")
 ![Alt text](screenshots/content.png?raw=true "Content Page")
 
+## Try it right now
+You can try it from the GitHub page from here if your browser supports modern HTTPS: https://olsro.github.io/jellydinosaur/upload
+
+Credentials:
+Jellyfin instance: https://demo.jellyfin.org/unstable
+Login : demo
+Password : <blank> (don't put anything)
+
 ## Tech stack
 - Pure HTML/ES3 JS (index.html)
 - (Optional) A flash AS3 app for streaming. I already compiled this program as an swf in the repo so you don't have to mess with the Flex SDK if you don't intend to modify it.
