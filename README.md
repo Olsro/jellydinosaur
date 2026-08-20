@@ -8,6 +8,10 @@ To host your instance of JellyDinosaur locally and quick, use on the upload fold
 You may want to setup this app with an integrated reverse proxy on your LAN which you can do with: node serve-with-proxy.js
 *Reverse proxy is especially useful if you need very old operating systems/browsers which lacks modern TLS to access any kind of Jellyfin server requiring SSL.*
 
+## Screenshots
+![Alt text](screenshots/library.png?raw=true "Library Page")
+![Alt text](screenshots/content.png?raw=true "Content Page")
+
 ## Tech stack
 - Pure HTML/ES3 JS (index.html)
 - (Optional) A flash AS3 app for streaming. I already compiled this program as an swf in the repo so you don't have to mess with the Flex SDK if you don't intend to modify it.
