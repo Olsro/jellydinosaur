@@ -2,9 +2,13 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
+    <!-- Sans viewport explicite, les navigateurs mobiles rendent la page dans une surface
+         virtuelle tres large puis la reduisent, ce qui rend le texte minuscule. Les vieux
+         navigateurs qui ne connaissent pas cette balise l'ignorent simplement. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>JellyDinosaur</title>
     <style>
-        body { font-family: sans-serif; margin: 20px; }
+      body { font-family: sans-serif; margin: 20px; }
       .section { border: 1px solid #ccc; padding: 10px; margin-bottom: 20px; }
       .hidden { display: none; }
       /* CSS Grid (display:grid) n'existe dans aucun navigateur avant ~2014-2017, bien après le
@@ -17,19 +21,56 @@
       .grid-container .item-entry { float: left; width: 50%; padding-right: 10px; margin: 0 0 5px 0; -moz-box-sizing: border-box; box-sizing: border-box; }
       .item-entry { cursor: pointer; color: blue; text-decoration: underline; margin: 5px 0; }
       .category-title { font-weight: bold; font-size: 1.2em; margin-top: 10px; }
+      .app-version { margin: -12px 0 20px 0; }
       .error-message { color: red; font-weight: bold; border: 1px solid red; padding: 10px; margin-bottom: 20px; }
       table { border-collapse: collapse; margin: 5px 0; }
       td { padding: 2px 12px 2px 0; }
+      img { max-width: 100%; height: auto; }
       /* vertical-align:middle sur le slider seul ne suffit pas : les <span> voisins restent alignés
          sur leur baseline par défaut (référence différente de "middle"), d'où un léger décalage
          visuel malgré des centres de boîte proches. On aligne les trois éléments de la ligne
          (libellé, slider, affichage du temps) sur la même référence "middle". */
       .v-mid { vertical-align: middle; }
+
+      /* Les media queries sont comprises par les navigateurs mobiles vises et par Firefox 3.5.
+         Un navigateur plus ancien qui ne les comprend pas conserve simplement la presentation
+         ci-dessus : aucune dependance JavaScript ou CSS moderne n'est introduite. */
+      @media only screen and (max-width: 480px) {
+        body { margin: 8px; font-size: 16px; line-height: 1.4; -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+        h1 { font-size: 1.6em; margin: 0 0 12px 0; }
+        .app-version { margin: -8px 0 12px 0; }
+        h3, h4, h5, h6 { margin-top: 0.8em; margin-bottom: 0.5em; }
+        p { margin-top: 0.7em; margin-bottom: 0.7em; }
+        .section { padding: 8px; margin-bottom: 12px; word-wrap: break-word; }
+        .grid-container .item-entry { float: none; width: auto; padding-right: 0; margin-bottom: 8px; }
+        .item-entry { padding: 4px 0; }
+        button { max-width: 100%; padding: 7px 8px; margin: 3px 1px; font-size: 1em; line-height: 1.25; white-space: normal; }
+        select { max-width: 100%; font-size: 1em; }
+        #serverUrl, #apiKey, #username, #password,
+        #movieSearch, #seriesSearch, #channelSearch {
+          display: block; width: 100%; margin: 4px 0 8px 0; padding: 5px;
+          font-size: 1em; -moz-box-sizing: border-box; box-sizing: border-box;
+        }
+        #movieGenreFilter, #seriesGenreFilter,
+        #seasonSelect, #episodeSelect, #audioSelect, #subtitleSelect {
+          display: block; margin: 4px 0 8px 0;
+        }
+        #startTimeSlider, #startTimeSliderFlash { max-width: 60%; }
+        .setting-field { display: block; margin-bottom: 7px; }
+        .setting-separator { display: none; }
+        .start-time-label { display: block; margin-bottom: 2px; }
+        #channelPager { text-align: center; }
+        #channelPager button, #channelPager span { display: block; margin-left: auto; margin-right: auto; }
+        table { width: 100%; table-layout: fixed; }
+        td { padding-right: 6px; word-wrap: break-word; vertical-align: top; }
+        a { line-height: 1.7; }
+      }
     </style>
 </head>
 <body>
 
     <h1>JellyDinosaur</h1>
+    <div class="app-version"><small><i>Version 1.1.0</i></small></div>
 
     <div id="errorBanner" class="error-message hidden">
         <span id="errorText"></span>
@@ -200,15 +241,15 @@
                          avancé choisir une valeur intermédiaire. La valeur est en Mbps (1 décimale) ; elle est
                          convertie en bps via mbpsToBps() partout où le bitrate réel est utilisé. La validation
                          (nombre positif, sous le plafond du niveau H.264 choisi) se fait dans validateBitrateInput().-->
-                    <span data-i18n="bitrateLabel">Bitrate :</span> <input type="text" id="bitrateSelect" value="2.4" size="5"> Mbps
-                    &nbsp;|&nbsp;
-                    <span data-i18n="audioBitrateLabel">Bitrate audio AAC :</span> <select id="audioBitrateSelect">
+                    <span class="setting-field"><span data-i18n="bitrateLabel">Bitrate :</span> <input type="text" id="bitrateSelect" value="2.4" size="5"> Mbps</span>
+                    <span class="setting-separator">&nbsp;|&nbsp;</span>
+                    <span class="setting-field"><span data-i18n="audioBitrateLabel">Bitrate audio AAC :</span> <select id="audioBitrateSelect">
                         <option value="128000">128 kbps</option>
                         <option value="192000">192 kbps</option>
                         <option value="256000" selected>256 kbps</option>
-                    </select>
-                    &nbsp;|&nbsp;
-                    <span data-i18n="levelLabel">Niveau H.264 :</span> <select id="levelSelect">
+                    </select></span>
+                    <span class="setting-separator">&nbsp;|&nbsp;</span>
+                    <span class="setting-field"><span data-i18n="levelLabel">Niveau H.264 :</span> <select id="levelSelect">
                         <option value="3.0">3.0</option>
                         <option value="3.1" selected>3.1</option>
                         <option value="4.0">4.0</option>
@@ -217,15 +258,15 @@
                         <option value="5.0">5.0</option>
                         <option value="5.1">5.1</option>
                         <option value="5.2">5.2</option>
-                    </select>
-                    &nbsp;|&nbsp;
-                    <span data-i18n="profileLabel">Profil d'encodage :</span> <select id="profileSelect">
+                    </select></span>
+                    <span class="setting-separator">&nbsp;|&nbsp;</span>
+                    <span class="setting-field"><span data-i18n="profileLabel">Profil d'encodage :</span> <select id="profileSelect">
                         <option value="baseline">Baseline</option>
                         <option value="main">Main</option>
                         <option value="high" selected>High</option>
-                    </select>
+                    </select></span>
                     <br><br>
-                    <span data-i18n="maxRefFramesLabel">Images de référence max :</span> <select id="maxRefFramesSelect">
+                    <span class="setting-field"><span data-i18n="maxRefFramesLabel">Images de référence max :</span> <select id="maxRefFramesSelect">
                         <option value="1">1</option>
                         <option value="2">2</option>
                         <option value="3">3</option>
@@ -234,17 +275,17 @@
                         <option value="6">6</option>
                         <option value="8">8</option>
                         <option value="16">16</option>
-                    </select>
-                    &nbsp;|&nbsp;
-                    <span data-i18n="maxVideoBitDepthLabel">Profondeur de bits max :</span> <select id="maxVideoBitDepthSelect">
+                    </select></span>
+                    <span class="setting-separator">&nbsp;|&nbsp;</span>
+                    <span class="setting-field"><span data-i18n="maxVideoBitDepthLabel">Profondeur de bits max :</span> <select id="maxVideoBitDepthSelect">
                         <option value="8" selected>8-bit</option>
                         <option value="10">10-bit</option>
-                    </select>
-                    &nbsp;|&nbsp;
-                    <span data-i18n="maxFramerateLabel">Framerate max :</span> <select id="maxFramerateSelect">
+                    </select></span>
+                    <span class="setting-separator">&nbsp;|&nbsp;</span>
+                    <span class="setting-field"><span data-i18n="maxFramerateLabel">Framerate max :</span> <select id="maxFramerateSelect">
                         <option value="30" selected>30 fps</option>
                         <option value="60">60 fps</option>
-                    </select>
+                    </select></span>
                     <br><br>
                     <div id="estimatedSizeBlock">
                         <p><b data-i18n="estimatedSizeLabel">Taille estimée du contenu complet :</b> <span id="estimatedSizeText">-</span></p>
@@ -275,7 +316,7 @@
                     <!-- Enveloppé pour pouvoir disparaître en entier sur une chaîne en direct : un flux
                          sans fin n'a pas de position de départ (startTimeTicks y est sans effet). -->
                     <div id="startTimeRowMp4">
-                        <span class="v-mid" data-i18n="startTimeLabel">Démarrer à :</span>
+                        <span class="v-mid start-time-label" data-i18n="startTimeLabel">Démarrer à :</span>
                         <input class="v-mid" type="range" id="startTimeSlider" min="0" max="0" step="1" value="0">
                         <span class="v-mid" id="startTimeDisplay">0:00</span>
                     </div>
@@ -293,7 +334,7 @@
                          moyen de choisir la position en Flash ; changer de position = relancer la
                          lecture d'ici avec une nouvelle valeur. -->
                     <div id="startTimeRowFlash">
-                        <span class="v-mid" data-i18n="startTimeLabel">Démarrer à :</span>
+                        <span class="v-mid start-time-label" data-i18n="startTimeLabel">Démarrer à :</span>
                         <input class="v-mid" type="range" id="startTimeSliderFlash" min="0" max="0" step="1" value="0">
                         <span class="v-mid" id="startTimeDisplayFlash">0:00</span>
                     </div>
@@ -1598,7 +1639,7 @@
         var TRANSCODE_REASON = "User decided to transcode this content";
 
         function buildAuthorizationHeader() {
-            return 'MediaBrowser Client="JellyDinosaur", Device="Navigateur", DeviceId="' + AUTH_DEVICE_ID + '", Version="1.0.0"';
+            return 'MediaBrowser Client="JellyDinosaur", Device="Navigateur", DeviceId="' + AUTH_DEVICE_ID + '", Version="1.1.0"';
         }
 
         // Authentifie l'utilisateur par nom/mot de passe (POST /Users/AuthenticateByName).
