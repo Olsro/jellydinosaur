@@ -70,7 +70,7 @@
 <body>
 
     <h1>JellyDinosaur</h1>
-    <div class="app-version"><small><i>Version 1.1.0</i></small></div>
+    <div class="app-version"><small><i>Version 1.1.1</i></small></div>
 
     <div id="errorBanner" class="error-message hidden">
         <span id="errorText"></span>
@@ -1444,6 +1444,29 @@
                             onError();
                         }
                         fail(t("serverError", { code: xhr.status }));
+                    } else if (silentOnError) {
+                        // Une réponse cross-domain sans en-têtes CORS est exposée par le navigateur
+                        // comme un statut 0. Pour une requête facultative, on conserve le même
+                        // comportement silencieux que pour les autres refus d'accès.
+                        if (onError) {
+                            onError();
+                        }
+                    } else {
+                        // Certains reverse proxies remplacent le 401 de Jellyfin par leur propre page
+                        // d'erreur sans en-têtes CORS (c'est notamment le cas de demo.jellyfin.org).
+                        // Le navigateur masque alors le vrai 401 et ne fournit que le statut 0. Un ping
+                        // public permet de distinguer ce cas d'un serveur réellement inaccessible.
+                        pingServer(serverUrl, function() {
+                            if (onError) {
+                                onError();
+                            }
+                            handleUnauthorized();
+                        }, function() {
+                            if (onError) {
+                                onError();
+                            }
+                            fail(t("serverUnreachable"));
+                        });
                     }
                 }
             };
@@ -1639,7 +1662,7 @@
         var TRANSCODE_REASON = "User decided to transcode this content";
 
         function buildAuthorizationHeader() {
-            return 'MediaBrowser Client="JellyDinosaur", Device="Navigateur", DeviceId="' + AUTH_DEVICE_ID + '", Version="1.1.0"';
+            return 'MediaBrowser Client="JellyDinosaur", Device="Navigateur", DeviceId="' + AUTH_DEVICE_ID + '", Version="1.1.1"';
         }
 
         // Authentifie l'utilisateur par nom/mot de passe (POST /Users/AuthenticateByName).
@@ -1705,6 +1728,21 @@
                             onBusyChange(false);
                         }
                         showError(t("serverError", { code: xhr.status }), retry);
+                    } else {
+                        // Même cas que dans ajax() : un proxy peut retirer les en-têtes CORS de sa
+                        // réponse 401. Si le ping public fonctionne encore, la requête a bien atteint
+                        // le serveur et il s'agit d'un refus d'authentification, pas d'une panne réseau.
+                        pingServer(serverUrl, function() {
+                            if (onBusyChange) {
+                                onBusyChange(false);
+                            }
+                            showError(t("invalidCredentials"), retry);
+                        }, function() {
+                            if (onBusyChange) {
+                                onBusyChange(false);
+                            }
+                            showError(t("serverUnreachable"), retry);
+                        });
                     }
                 }
             };
