@@ -6,6 +6,7 @@ It is a static < 100kb HTML webpage, which can be uploaded to any HTTP web serve
 To host your instance of JellyDinosaur locally and quick, use on the upload folder: python3 -m http.server 20005
 
 You may want to setup this app with an integrated reverse proxy on your LAN which you can do with: node serve-with-proxy.js
+
 *Reverse proxy is especially useful if you need very old operating systems/browsers which lacks modern TLS to access any kind of Jellyfin server requiring SSL.*
 
 ## Screenshots
@@ -16,8 +17,11 @@ You may want to setup this app with an integrated reverse proxy on your LAN whic
 You can try it from the GitHub page from here if your browser supports modern HTTPS: https://olsro.github.io/jellydinosaur/upload
 
 Credentials:
+
 Jellyfin instance: https://demo.jellyfin.org/unstable
+
 Login : demo
+
 Password : <blank> (don't put anything)
 
 ## Tech stack
@@ -75,4 +79,4 @@ Outside of the code, everything is human efforts, including but not limited to:
 - Writing social media posts and answering to comments from the community
 
 ## Supporting your work
-If you wanna help me to cover the costs of this dev (time spent + API costs for AI tools) and if this app is useful to you, a tip will be greatly apprecied thank you very much: https://www.patreon.com/c/Olsro
+If you wanna help me to cover the costs of this dev (time spent + API costs for AI tools) and if this app is useful to you, a tip will be greatly apprecied thank you very much: https://www.patreon.com/Olsro
